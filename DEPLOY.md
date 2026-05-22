@@ -1,48 +1,37 @@
-# Deploy (free) — every 10 minutes with full VietJet
+# Deploy online (free)
 
-**VietJet blocks datacenter IPs** (GitHub `ubuntu-latest`, Render, Railway, etc.). Your Mac home IP works.
+## Recommended: GitHub Actions (already wired)
 
-## Repo
+- Repo: https://github.com/phattanun/flight-price-tracker
+- Runs every **10 minutes** on `ubuntu-latest`
+- Secret: `SLACK_WEBHOOK_URL`
+- VietJet: REST + **Playwright** fallback if HTTP 403
 
-https://github.com/phattanun/flight-price-tracker (private) — `SLACK_WEBHOOK_URL` secret is set.
+**Test:** Actions → Flight price tracker → Run workflow
 
-## Option A — Self-hosted GitHub runner on your Mac (recommended)
+## Also: Render / Fly.io (always-on URL)
 
-Keeps GitHub cron + secrets; **VietJet is not skipped**.
+1. Connect repo on [Render](https://render.com) or `fly launch` (region `sin`)
+2. Set env: `SLACK_WEBHOOK_URL`, optional `CRON_SECRET`
+3. Ping every 10 min with [cron-job.org](https://cron-job.org) (free):
+   - URL: `https://YOUR-APP.onrender.com/run?secret=YOUR_CRON_SECRET`
+   - Method: GET or POST
 
-1. **`scripts/SETUP-RUNNER.md`**
-2. https://github.com/phattanun/flight-price-tracker/settings/actions/runners/new → macOS
-3. Run GitHub’s `./config.sh` then `./run.sh` (or `./svc.sh install`)
-4. Test: **Actions → Flight price tracker → Run workflow**
+Render **free web** sleeps when idle; cron-job.org wakes it each run.
 
-Jobs queue until your runner is online.
+## VietJet on cloud
 
-## Option B — Local launchd (no runner)
+Many datacenter IPs get HTTP 403. This repo tries:
 
-```bash
-./scripts/install-macos-launchd.sh
-```
+1. `curl_cffi` Chrome impersonation + homepage cookies
+2. Headless Chromium (Playwright) on 403
+3. Optional `VIETJET_PROXY` env (residential proxy URL)
 
-Set `SLACK_WEBHOOK_URL` in env or `config.yaml`.
+Google Flights usually works from cloud even when VietJet is blocked.
 
-## Free cloud-only?
-
-| Host | VietJet |
-|------|---------|
-| GitHub ubuntu-latest | 403 |
-| Render / Railway / Fly / Oracle free | Usually 403 |
-| Your Mac | Works |
-
-No reliable free datacenter path for VietJet without a paid residential proxy.
-
-## Local test
+## Local
 
 ```bash
-export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
+export SLACK_WEBHOOK_URL="..."
 python tracker.py --once
 ```
-
-## Slack
-
-- Deal alerts when price under your per-provider limits
-- Errors when a provider or route fails (403 geo-blocks are not spammed to Slack)

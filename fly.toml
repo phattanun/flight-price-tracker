@@ -1,0 +1,13 @@
+app = "flight-price-tracker"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Set via: fly secrets set SLACK_WEBHOOK_URL=...
+
+[[vm]]
+  memory = "512mb"
+  cpu_kind = "shared"
+  cpus = 1

@@ -1,8 +1,5 @@
 name: Flight price tracker
 
-# Runs on YOUR Mac (self-hosted runner) — VietJet works on your home IP.
-# Setup once: scripts/SETUP-RUNNER.md
-
 on:
   schedule:
     - cron: "*/10 * * * *"
@@ -10,15 +7,17 @@ on:
 
 jobs:
   check:
-    runs-on: self-hosted
-    timeout-minutes: 15
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Install dependencies
-        run: python3 -m pip install -q -r requirements.txt
+        run: |
+          python3 -m pip install -q -r requirements.txt
+          python3 -m playwright install chromium --with-deps
       - name: Run tracker
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}

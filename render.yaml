@@ -1,0 +1,15 @@
+# Free-tier web service + external cron (see DEPLOY.md).
+# Render cron jobs are paid; use cron-job.org to POST /run every 10 min.
+services:
+  - type: web
+    name: flight-price-tracker
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    dockerCommand: python3 web_trigger.py
+    healthCheckPath: /health
+    envVars:
+      - key: SLACK_WEBHOOK_URL
+        sync: false
+      - key: CRON_SECRET
+        generateValue: true

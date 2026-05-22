@@ -120,7 +120,7 @@ def check_route(
             if is_provider_geo_blocked(exc):
                 print(
                     f"  [{provider_name}] blocked from this network (HTTP 403) — "
-                    "normal on GitHub/cloud; use Google Flights or run VietJet locally",
+                    "try Playwright fallback or VIETJET_PROXY; Google Flights may still work",
                     file=sys.stderr,
                 )
                 continue
