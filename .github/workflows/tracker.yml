@@ -1,9 +1,8 @@
 name: Flight price tracker
 
-# UTC: :03, :13, :23, :33, :43, :53 (offset avoids top-of-hour GitHub load)
 on:
   schedule:
-    - cron: "3,13,23,33,43,53 * * * *"
+    - cron: "*/10 * * * *"
   workflow_dispatch:
   repository_dispatch:
     types: [run-tracker]
