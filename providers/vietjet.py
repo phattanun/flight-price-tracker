@@ -1,8 +1,7 @@
-"""VietJet direct REST provider (curl_cffi + Playwright fallback on cloud WAF)."""
+"""VietJet direct REST provider (curl_cffi + ScraperAPI proxy for cloud)."""
 
 from __future__ import annotations
 
-import json
 import os
 from typing import Any
 from urllib.parse import urlencode
@@ -39,6 +38,8 @@ class VietJetProvider(BaseProvider):
         self._rl = RateLimitConfig((config or {}).get("rate_limit"))
 
     def search_fares(self, route: RouteConfig) -> list[FareResult]:
+        if _should_skip_vietjet():
+            return []
         anchor = format_dd_mm_yyyy(route.date_range_start)
         merged: dict = {}
         session = _open_vietjet_session(self._rl)
@@ -115,10 +116,7 @@ def _fetch_calendar(
         if key:
             print("  [vietjet] HTTP 403 — retrying via ScraperAPI (residential)...")
             return _fetch_calendar_scraperapi(url, params, key)
-        if _skip_playwright_fallback():
-            _raise_blocked()
-        print("  [vietjet] HTTP 403 on REST — retrying via headless browser...")
-        return _fetch_calendar_playwright(url, params, cfg)
+        _raise_blocked()
     resp.raise_for_status()
     data = resp.json()
     return data if isinstance(data, dict) else {}
@@ -141,51 +139,16 @@ def _fetch_calendar_scraperapi(
     return data if isinstance(data, dict) else {}
 
 
-def _fetch_calendar_playwright(
-    url: str, params: list[tuple[str, str]], cfg: RateLimitConfig
-) -> dict:
-    random_delay(cfg)
-    full_url = f"{url}?{urlencode(params)}"
-    headers = default_headers(VIETJET_HEADERS)
-    try:
-        from playwright.sync_api import sync_playwright
-    except ImportError as exc:
-        raise requests.HTTPError(
-            "403 from VietJet and playwright is not installed", response=None
-        ) from exc
+def _should_skip_vietjet() -> bool:
+    """Skip VietJet on GitHub Actions when no ScraperAPI key is available.
 
-    with sync_playwright() as p:
-        browser = p.chromium.launch(
-            headless=True,
-            args=["--disable-blink-features=AutomationControlled"],
-        )
-        context = browser.new_context(
-            user_agent=headers.get("User-Agent"),
-            locale="en-US",
-            viewport={"width": 1366, "height": 768},
-        )
-        page = context.new_page()
-        page.goto(HOME_URL, wait_until="domcontentloaded", timeout=90_000)
-        api_resp = page.request.get(full_url, headers=headers, timeout=90_000)
-        status = api_resp.status
-        body = api_resp.text()
-        browser.close()
-
-    if status == 403:
-        _raise_blocked()
-    if status >= 400:
-        raise requests.HTTPError(f"VietJet API HTTP {status}", response=_fake_response(status))
-    data = json.loads(body)
-    return data if isinstance(data, dict) else {}
-
-
-def _skip_playwright_fallback() -> bool:
-    """Cloud CI: Playwright still hits 403; skip to save ~60s per route."""
-    if os.environ.get("SKIP_PLAYWRIGHT", "").strip().lower() in ("1", "true", "yes"):
-        return True
+    VietJet blocks non-Thai IPs. Without a proxy key, attempting the request
+    just wastes time and produces noisy 403 logs.
+    """
     on_github = os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
-    has_scraper = bool(os.environ.get("SCRAPERAPI_KEY", "").strip())
-    return on_github and not has_scraper
+    if not on_github:
+        return False
+    return not bool(os.environ.get("SCRAPERAPI_KEY", "").strip())
 
 
 def _fake_response(status: int) -> requests.Response:
