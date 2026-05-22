@@ -1,74 +1,48 @@
-# Deploy (free) — GitHub Actions every 10 minutes
+# Deploy (free) — every 10 minutes with full VietJet
 
-Hosting uses **GitHub Actions** (free for public repos). No server to manage.
+**VietJet blocks datacenter IPs** (GitHub `ubuntu-latest`, Render, Railway, etc.). Your Mac home IP works.
 
 ## Repo
 
-https://github.com/phattanun/flight-price-tracker (private)
+https://github.com/phattanun/flight-price-tracker (private) — `SLACK_WEBHOOK_URL` secret is set.
 
-- `SLACK_WEBHOOK_URL` secret is already set on the repo.
-- App code is pushed; **you must add the workflow** (one-time) — see below.
+## Option A — Self-hosted GitHub runner on your Mac (recommended)
 
-## Already done (automated setup)
+Keeps GitHub cron + secrets; **VietJet is not skipped**.
 
-- Private repo on your GitHub account
-- `SLACK_WEBHOOK_URL` repository secret
-- Workflow runs every **10 minutes** (UTC cron)
+1. **`scripts/SETUP-RUNNER.md`**
+2. https://github.com/phattanun/flight-price-tracker/settings/actions/runners/new → macOS
+3. Run GitHub’s `./config.sh` then `./run.sh` (or `./svc.sh install`)
+4. Test: **Actions → Flight price tracker → Run workflow**
 
-## Manual setup
+Jobs queue until your runner is online.
 
-1. Create a repo on GitHub and push this folder.
-2. **Settings → Secrets and variables → Actions → New repository secret**
-   - Name: `SLACK_WEBHOOK_URL`
-   - Value: your Slack incoming webhook URL
-3. **Actions** tab → enable workflows if prompted.
-4. Run once: **Actions → Flight price tracker → Run workflow**.
+## Option B — Local launchd (no runner)
 
-## Local run with webhook
+```bash
+./scripts/install-macos-launchd.sh
+```
+
+Set `SLACK_WEBHOOK_URL` in env or `config.yaml`.
+
+## Free cloud-only?
+
+| Host | VietJet |
+|------|---------|
+| GitHub ubuntu-latest | 403 |
+| Render / Railway / Fly / Oracle free | Usually 403 |
+| Your Mac | Works |
+
+No reliable free datacenter path for VietJet without a paid residential proxy.
+
+## Local test
 
 ```bash
 export SLACK_WEBHOOK_URL="https://hooks.slack.com/services/..."
 python tracker.py --once
 ```
 
-Or put the URL in `config.yaml` under `slack_webhook_url` (do not commit real URLs to a public repo).
+## Slack
 
-## Slack on errors
-
-The tracker posts to Slack when:
-- A provider fails for a route (per-route error message)
-- An entire route check crashes (with stack trace)
-- The process crashes in loop mode
-
-Deal alerts use a separate message (no warning emoji).
-
-## Schedule note
-
-GitHub may delay scheduled runs by a few minutes on the free tier. Minimum cron interval is 5 minutes; this project uses `*/10` (every 10 minutes UTC).
-
-
-## Enable the 10-minute schedule (required once)
-
-GitHub blocked pushing the workflow file without extra OAuth scope. Do **one** of:
-
-### Option A — Browser auth (recommended)
-
-1. Open https://github.com/login/device
-2. Enter code **E4DC-F509** (or run `gh auth refresh -s workflow` for a new code)
-3. Then in terminal:
-
-```bash
-cd "/Users/paukkarapunt/Documents/playground/vietjet tracker"
-git add .github/workflows/tracker.yml
-git commit -m "Add scheduled workflow"
-git push origin main
-```
-
-### Option B — Paste in GitHub UI
-
-1. Repo → **Add file** → **Create new file**
-2. Path: `.github/workflows/tracker.yml`
-3. Paste contents from local `.github/workflows/tracker.yml` in this project
-4. Commit to `main`
-
-Then **Actions** → enable workflows if asked → **Run workflow** to test.
+- Deal alerts when price under your per-provider limits
+- Errors when a provider or route fails (403 geo-blocks are not spammed to Slack)
