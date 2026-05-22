@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Minimal HTTP server for free cloud hosts (Render/Fly/Railway) + external cron pings."""
+"""Self-scheduling tracker + health endpoint for Render/Fly free tier."""
 
 from __future__ import annotations
 
@@ -7,14 +7,56 @@ import os
 import subprocess
 import sys
 import threading
+import time
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "10000"))
+INTERVAL = int(os.environ.get("CHECK_INTERVAL_MINUTES", "10"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "").strip()
 _running = threading.Lock()
+_last_run: str = "never"
+_last_status: str = "pending"
+
+
+def _run_tracker_once() -> tuple[int, str]:
+    """Run tracker.py --once, return (exit_code, output)."""
+    proc = subprocess.run(
+        [sys.executable, str(ROOT / "tracker.py"), "--once"],
+        cwd=str(ROOT),
+        capture_output=True,
+        text=True,
+        timeout=900,
+        env=os.environ.copy(),
+    )
+    output = (proc.stdout or "") + (proc.stderr or "")
+    return proc.returncode, output
+
+
+def _scheduler_loop() -> None:
+    """Background thread: run tracker every INTERVAL minutes."""
+    global _last_run, _last_status
+    time.sleep(5)
+    while True:
+        if _running.acquire(blocking=False):
+            try:
+                now = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+                print(f"[scheduler] Starting check at {now}")
+                code, output = _run_tracker_once()
+                _last_run = now
+                _last_status = "ok" if code == 0 else f"error (exit {code})"
+                print(f"[scheduler] Done: {_last_status}")
+                if output:
+                    for line in output.strip().split("\n")[-10:]:
+                        print(f"  {line}")
+            finally:
+                _running.release()
+        else:
+            print("[scheduler] Skipped — already running")
+        time.sleep(INTERVAL * 60)
 
 
 def _authorized(path: str, headers: dict) -> bool:
@@ -30,28 +72,39 @@ def _authorized(path: str, headers: dict) -> bool:
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt: str, *args: object) -> None:
-        print(f"[http] {self.address_string()} - {fmt % args}")
+        pass
 
     def do_GET(self) -> None:
         if self.path.startswith("/health"):
+            body = f"ok | last_run={_last_run} | status={_last_status}"
             self.send_response(200)
             self.end_headers()
-            self.wfile.write(b"ok")
+            self.wfile.write(body.encode())
             return
         if self.path.startswith("/run"):
-            self._run_tracker()
+            self._manual_run()
+            return
+        if self.path.startswith("/status"):
+            self._status()
             return
         self.send_response(404)
         self.end_headers()
 
     def do_POST(self) -> None:
         if self.path.startswith("/run"):
-            self._run_tracker()
+            self._manual_run()
             return
         self.send_response(404)
         self.end_headers()
 
-    def _run_tracker(self) -> None:
+    def _status(self) -> None:
+        body = f"last_run: {_last_run}\nstatus: {_last_status}\ninterval: {INTERVAL}min\n"
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(body.encode())
+
+    def _manual_run(self) -> None:
+        global _last_run, _last_status
         if not _authorized(self.path, dict(self.headers)):
             self.send_response(401)
             self.end_headers()
@@ -63,25 +116,23 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(b"already running")
             return
         try:
-            proc = subprocess.run(
-                [sys.executable, str(ROOT / "tracker.py"), "--once"],
-                cwd=str(ROOT),
-                capture_output=True,
-                text=True,
-                timeout=900,
-                env=os.environ.copy(),
-            )
-            body = (proc.stdout or "") + (proc.stderr or "")
-            code = 200 if proc.returncode == 0 else 500
-            self.send_response(code)
+            code, output = _run_tracker_once()
+            _last_run = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+            _last_status = "ok" if code == 0 else f"error (exit {code})"
+            self.send_response(200 if code == 0 else 500)
             self.end_headers()
-            self.wfile.write(body.encode("utf-8", errors="replace")[-8000:])
+            self.wfile.write(output.encode("utf-8", errors="replace")[-8000:])
         finally:
             _running.release()
 
 
 def main() -> None:
-    print(f"Listening on 0.0.0.0:{PORT} — GET/POST /run?secret=... or Bearer token")
+    print(f"Flight tracker — auto-check every {INTERVAL} min")
+    print(f"Listening on 0.0.0.0:{PORT} — /health, /status, /run")
+
+    scheduler = threading.Thread(target=_scheduler_loop, daemon=True)
+    scheduler.start()
+
     HTTPServer(("0.0.0.0", PORT), Handler).serve_forever()
 
 
