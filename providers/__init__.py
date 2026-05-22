@@ -81,23 +81,16 @@ def is_provider_geo_blocked(exc: Exception) -> bool:
 
 
 def providers_for_check(route: RouteConfig) -> dict[str, float]:
-    """Apply SKIP_PROVIDERS / auto-skip vietjet on GitHub Actions runners."""
+    """Optional SKIP_PROVIDERS env (comma-separated), e.g. SKIP_PROVIDERS=vietjet."""
     raw = route.providers_to_query()
-    skip: set[str] = set()
-    if os.getenv("GITHUB_ACTIONS") == "true":
-        skip.update(
-            p.strip()
-            for p in os.getenv("SKIP_PROVIDERS", "vietjet").split(",")
-            if p.strip()
-        )
-    elif os.getenv("SKIP_PROVIDERS"):
-        skip.update(
-            p.strip() for p in os.getenv("SKIP_PROVIDERS", "").split(",") if p.strip()
-        )
+    skip_env = os.getenv("SKIP_PROVIDERS", "").strip()
+    if not skip_env:
+        return raw
+    skip = {p.strip() for p in skip_env.split(",") if p.strip()}
     if skip:
         skipped = [p for p in raw if p in skip]
         if skipped:
-            print(f"  Skipping provider(s) on this host: {', '.join(skipped)}")
+            print(f"  Skipping provider(s): {', '.join(skipped)} (SKIP_PROVIDERS)")
     return {k: v for k, v in raw.items() if k not in skip}
 
 

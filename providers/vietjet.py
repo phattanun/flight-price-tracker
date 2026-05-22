@@ -11,10 +11,12 @@ from providers import (
 from providers.anti_ratelimit import RateLimitConfig, default_headers, random_delay
 
 API_BASE = "https://th.vietjetair.com/flight/getLowFareCalendar"
+HOME_URL = "https://th.vietjetair.com/en"
 VIETJET_HEADERS = {
     "Referer": "https://th.vietjetair.com/",
     "Origin": "https://th.vietjetair.com",
     "Accept-Language": "en-US,en;q=0.9,th;q=0.8",
+    "Accept": "application/json, text/plain, */*",
 }
 
 
@@ -29,6 +31,7 @@ class VietJetProvider(BaseProvider):
     def search_fares(self, route: RouteConfig) -> list[FareResult]:
         anchor = format_dd_mm_yyyy(route.date_range_start)
         merged: dict = {}
+        session = _open_vietjet_session(self._rl)
         for ym in months_in_range(route.date_range_start, route.date_range_end):
             params = [
                 ("tripType", "onewaytrip"), ("from_where", route.origin), ("to_where", route.destination),
@@ -37,7 +40,7 @@ class VietJetProvider(BaseProvider):
                 ("infantCount", str(route.infants)), ("promoCode", route.promo_code),
                 ("currency", route.currency), ("year_months[]", ym), ("findLowestFare", "1"),
             ]
-            resp = _vietjet_get(API_BASE, cfg=self._rl, params=params)
+            resp = _vietjet_get(session, API_BASE, cfg=self._rl, params=params)
             payload = resp.json()
             if isinstance(payload, dict):
                 merged.update(payload)
@@ -56,25 +59,27 @@ class VietJetProvider(BaseProvider):
         return fares
 
 
-def _vietjet_get(url: str, *, cfg: RateLimitConfig, params: list[tuple[str, str]]) -> Any:
-    """GET with browser-like headers; curl_cffi when installed."""
+def _open_vietjet_session(cfg: RateLimitConfig) -> Any:
+    """Warm up cookies from the homepage (required on some networks)."""
     headers = default_headers(VIETJET_HEADERS)
     random_delay(cfg)
     try:
         from curl_cffi import requests as cffi_requests
 
-        resp = cffi_requests.get(
-            url,
-            params=params,
-            headers=headers,
-            timeout=30,
-            impersonate="chrome120",
-        )
-        resp.raise_for_status()
-        return resp
+        session = cffi_requests.Session(impersonate="chrome120")
+        session.get(HOME_URL, headers=headers, timeout=30)
+        return session
     except ImportError:
         import requests
 
-        resp = requests.get(url, params=params, headers=headers, timeout=30)
-        resp.raise_for_status()
-        return resp
+        session = requests.Session()
+        session.headers.update(headers)
+        session.get(HOME_URL, timeout=30)
+        return session
+
+
+def _vietjet_get(session: Any, url: str, *, cfg: RateLimitConfig, params: list[tuple[str, str]]) -> Any:
+    random_delay(cfg)
+    resp = session.get(url, params=params, timeout=30)
+    resp.raise_for_status()
+    return resp
