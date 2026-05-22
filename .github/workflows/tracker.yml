@@ -1,26 +1,36 @@
 name: Flight price tracker
 
+# Every 10 minutes UTC (:00, :10, :20, :30, :40, :50)
 on:
   schedule:
-    - cron: "*/10 * * * *"
+    - cron: "0,10,20,30,40,50 * * * *"
   workflow_dispatch:
+
+concurrency:
+  group: flight-price-tracker
+  cancel-in-progress: true
+
+permissions:
+  contents: read
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - name: Install dependencies
-        run: |
-          python3 -m pip install -q -r requirements.txt
-          python3 -m playwright install chromium --with-deps
+          cache: pip
+
+      - name: Install Python dependencies
+        run: python3 -m pip install -q -r requirements.txt
+
       - name: Run tracker
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-          # Optional: free tier at https://www.scraperapi.com/ — enables VietJet from cloud
           SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
+          SKIP_PLAYWRIGHT: "true"
         run: python3 tracker.py --once

@@ -115,6 +115,8 @@ def _fetch_calendar(
         if key:
             print("  [vietjet] HTTP 403 — retrying via ScraperAPI (residential)...")
             return _fetch_calendar_scraperapi(url, params, key)
+        if _skip_playwright_fallback():
+            _raise_blocked()
         print("  [vietjet] HTTP 403 on REST — retrying via headless browser...")
         return _fetch_calendar_playwright(url, params, cfg)
     resp.raise_for_status()
@@ -175,6 +177,15 @@ def _fetch_calendar_playwright(
         raise requests.HTTPError(f"VietJet API HTTP {status}", response=_fake_response(status))
     data = json.loads(body)
     return data if isinstance(data, dict) else {}
+
+
+def _skip_playwright_fallback() -> bool:
+    """Cloud CI: Playwright still hits 403; skip to save ~60s per route."""
+    if os.environ.get("SKIP_PLAYWRIGHT", "").strip().lower() in ("1", "true", "yes"):
+        return True
+    on_github = os.environ.get("GITHUB_ACTIONS", "").strip().lower() == "true"
+    has_scraper = bool(os.environ.get("SCRAPERAPI_KEY", "").strip())
+    return on_github and not has_scraper
 
 
 def _fake_response(status: int) -> requests.Response:

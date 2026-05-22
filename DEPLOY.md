@@ -45,3 +45,10 @@ Pure GitHub/Render IPs are blocked by VietJet (403). To get VietJet online:
 3. Re-run workflow
 
 Without it, **Google Flights still runs** every 10 minutes from the cloud.
+
+## GitHub schedule (10 min)
+
+- Cron runs at **:00, :10, :20, :30, :40, :50 UTC** (not your local timezone).
+- **Private repo:** ~2,000 Actions minutes/month. At ~1 min/run × 144 runs/day you may hit the cap; make the repo **public** for unlimited free minutes, or add `SCRAPERAPI_KEY` only (runs stay ~1 min).
+- **VietJet on GitHub:** set secret `SCRAPERAPI_KEY` (scraperapi.com free tier). Without it, Google Flights still runs; VietJet is skipped fast on 403.
+- Check: https://github.com/phattanun/flight-price-tracker/actions — trigger should say **Schedule**.
