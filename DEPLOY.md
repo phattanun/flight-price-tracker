@@ -2,7 +2,14 @@
 
 Hosting uses **GitHub Actions** (free for public repos). No server to manage.
 
-## Already done (if you used the setup script)
+## Repo
+
+https://github.com/phattanun/flight-price-tracker (private)
+
+- `SLACK_WEBHOOK_URL` secret is already set on the repo.
+- App code is pushed; **you must add the workflow** (one-time) — see below.
+
+## Already done (automated setup)
 
 - Private repo on your GitHub account
 - `SLACK_WEBHOOK_URL` repository secret
@@ -38,3 +45,30 @@ Deal alerts use a separate message (no warning emoji).
 ## Schedule note
 
 GitHub may delay scheduled runs by a few minutes on the free tier. Minimum cron interval is 5 minutes; this project uses `*/10` (every 10 minutes UTC).
+
+
+## Enable the 10-minute schedule (required once)
+
+GitHub blocked pushing the workflow file without extra OAuth scope. Do **one** of:
+
+### Option A — Browser auth (recommended)
+
+1. Open https://github.com/login/device
+2. Enter code **E4DC-F509** (or run `gh auth refresh -s workflow` for a new code)
+3. Then in terminal:
+
+```bash
+cd "/Users/paukkarapunt/Documents/playground/vietjet tracker"
+git add .github/workflows/tracker.yml
+git commit -m "Add scheduled workflow"
+git push origin main
+```
+
+### Option B — Paste in GitHub UI
+
+1. Repo → **Add file** → **Create new file**
+2. Path: `.github/workflows/tracker.yml`
+3. Paste contents from local `.github/workflows/tracker.yml` in this project
+4. Commit to `main`
+
+Then **Actions** → enable workflows if asked → **Run workflow** to test.
