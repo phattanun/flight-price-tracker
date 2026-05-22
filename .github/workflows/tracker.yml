@@ -21,4 +21,6 @@ jobs:
       - name: Run tracker
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          # Optional: free tier at https://www.scraperapi.com/ — enables VietJet from cloud
+          SCRAPERAPI_KEY: ${{ secrets.SCRAPERAPI_KEY }}
         run: python3 tracker.py --once

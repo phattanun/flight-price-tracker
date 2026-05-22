@@ -75,9 +75,13 @@ class RouteConfig:
 
 def is_provider_geo_blocked(exc: Exception) -> bool:
     """True when the remote site blocks this network (common on cloud/datacenter IPs)."""
-    if isinstance(exc, requests.HTTPError) and exc.response is not None:
-        return exc.response.status_code in (403, 451)
-    return False
+    if isinstance(exc, requests.HTTPError):
+        if exc.response is not None:
+            return exc.response.status_code in (403, 451)
+        msg = str(exc).lower()
+        return "403" in msg or "blocked" in msg
+    msg = str(exc).lower()
+    return "403" in msg and ("blocked" in msg or "geo" in msg)
 
 
 def providers_for_check(route: RouteConfig) -> dict[str, float]:

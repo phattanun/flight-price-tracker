@@ -111,10 +111,31 @@ def _fetch_calendar(
     random_delay(cfg)
     resp = session.get(url, params=params, timeout=30)
     if resp.status_code == 403:
+        key = os.environ.get("SCRAPERAPI_KEY", "").strip()
+        if key:
+            print("  [vietjet] HTTP 403 — retrying via ScraperAPI (residential)...")
+            return _fetch_calendar_scraperapi(url, params, key)
         print("  [vietjet] HTTP 403 on REST — retrying via headless browser...")
         return _fetch_calendar_playwright(url, params, cfg)
     resp.raise_for_status()
     data = resp.json()
+    return data if isinstance(data, dict) else {}
+
+
+def _fetch_calendar_scraperapi(
+    url: str, params: list[tuple[str, str]], api_key: str
+) -> dict:
+    """ScraperAPI free tier: https://www.scraperapi.com/ (1000 req/mo)."""
+    target = f"{url}?{urlencode(params)}"
+    proxy_resp = requests.get(
+        "https://api.scraperapi.com",
+        params={"api_key": api_key, "url": target, "country_code": "th"},
+        timeout=120,
+    )
+    if proxy_resp.status_code == 403:
+        _raise_blocked()
+    proxy_resp.raise_for_status()
+    data = proxy_resp.json()
     return data if isinstance(data, dict) else {}
 
 
@@ -149,8 +170,21 @@ def _fetch_calendar_playwright(
         browser.close()
 
     if status == 403:
-        raise requests.HTTPError(f"VietJet blocked (HTTP 403) from this host", response=None)
+        _raise_blocked()
     if status >= 400:
-        raise requests.HTTPError(f"VietJet API HTTP {status}", response=None)
+        raise requests.HTTPError(f"VietJet API HTTP {status}", response=_fake_response(status))
     data = json.loads(body)
     return data if isinstance(data, dict) else {}
+
+
+def _fake_response(status: int) -> requests.Response:
+    r = requests.Response()
+    r.status_code = status
+    return r
+
+
+def _raise_blocked() -> None:
+    raise requests.HTTPError(
+        "VietJet blocked (HTTP 403) from this host",
+        response=_fake_response(403),
+    )
