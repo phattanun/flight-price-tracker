@@ -1,0 +1,109 @@
+slack_webhook_url: ""  # use SLACK_WEBHOOK_URL env (GitHub secret or .env locally)
+check_interval_minutes: 10
+
+rate_limit:
+  min_delay_seconds: 3
+  max_delay_seconds: 10
+  max_retries: 3
+  backoff_multiplier: 2.0
+
+routes:
+  - name: "BKK-NRT"
+    from: BKK
+    to: NRT
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "BKK-KIX"
+    from: BKK
+    to: KIX
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "BKK-NGO"
+    from: BKK
+    to: NGO
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "BKK-FUK"
+    from: BKK
+    to: FUK
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "BKK-HND"
+    from: BKK
+    to: HND
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "DMK-NRT"
+    from: DMK
+    to: NRT
+    adults: 3
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+    providers:
+      vietjet: 2000
+      google_flights: 5000
+
+  - name: "SIN-NRT"
+    from: SIN
+    to: NRT
+    adults: 1
+    children: 0
+    infants: 0
+    currency: sgd
+    max_price_per_person: 160
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
+
+  - name: "SIN-HND"
+    from: SIN
+    to: HND
+    adults: 1
+    children: 0
+    infants: 0
+    currency: sgd
+    max_price_per_person: 160
+    date_range_start: "2027-01-01"
+    date_range_end: "2027-01-08"
