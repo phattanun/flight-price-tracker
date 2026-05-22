@@ -16,7 +16,15 @@ from typing import Any
 import requests
 import yaml
 
-from providers import FareResult, PROVIDER_REGISTRY, RouteConfig, get_provider, load_all_providers
+from providers import (
+    FareResult,
+    PROVIDER_REGISTRY,
+    RouteConfig,
+    get_provider,
+    is_provider_geo_blocked,
+    load_all_providers,
+    providers_for_check,
+)
 from providers.anti_ratelimit import RateLimitConfig
 
 CONFIG_NAME = "config.yaml"
@@ -86,7 +94,10 @@ def check_route(
     webhook: str,
 ) -> tuple[bool, list[str]]:
     route = RouteConfig.from_dict(route_raw)
-    providers = route.providers_to_query()
+    providers = providers_for_check(route)
+    if not providers:
+        print(f"Checking {route.name} — no providers enabled on this host.")
+        return False, []
     print(f"Checking {route.name} ({', '.join(providers)})...")
 
     all_matches: list[FareResult] = []
@@ -106,6 +117,13 @@ def check_route(
                 print(f"  [{provider_name}] {len(matches)} fare(s) <= {max_price:,.0f}")
             all_matches.extend(matches)
         except Exception as exc:
+            if is_provider_geo_blocked(exc):
+                print(
+                    f"  [{provider_name}] blocked from this network (HTTP 403) — "
+                    "normal on GitHub/cloud; use Google Flights or run VietJet locally",
+                    file=sys.stderr,
+                )
+                continue
             msg = f"{route.name} / {provider_name}: {exc}"
             errors.append(msg)
             print(f"  [{provider_name}] Error: {exc}", file=sys.stderr)

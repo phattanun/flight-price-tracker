@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any
+
+import requests
 
 
 @dataclass
@@ -68,6 +71,34 @@ class RouteConfig:
             provider_limits=provider_limits,
             extra={k: v for k, v in raw.items() if k not in _ROUTE_KEYS},
         )
+
+
+def is_provider_geo_blocked(exc: Exception) -> bool:
+    """True when the remote site blocks this network (common on cloud/datacenter IPs)."""
+    if isinstance(exc, requests.HTTPError) and exc.response is not None:
+        return exc.response.status_code in (403, 451)
+    return False
+
+
+def providers_for_check(route: RouteConfig) -> dict[str, float]:
+    """Apply SKIP_PROVIDERS / auto-skip vietjet on GitHub Actions runners."""
+    raw = route.providers_to_query()
+    skip: set[str] = set()
+    if os.getenv("GITHUB_ACTIONS") == "true":
+        skip.update(
+            p.strip()
+            for p in os.getenv("SKIP_PROVIDERS", "vietjet").split(",")
+            if p.strip()
+        )
+    elif os.getenv("SKIP_PROVIDERS"):
+        skip.update(
+            p.strip() for p in os.getenv("SKIP_PROVIDERS", "").split(",") if p.strip()
+        )
+    if skip:
+        skipped = [p for p in raw if p in skip]
+        if skipped:
+            print(f"  Skipping provider(s) on this host: {', '.join(skipped)}")
+    return {k: v for k, v in raw.items() if k not in skip}
 
 
 _ROUTE_KEYS = frozenset({
