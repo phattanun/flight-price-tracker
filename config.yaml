@@ -8,102 +8,50 @@ rate_limit:
   backoff_multiplier: 2.0
 
 routes:
-  - name: "BKK-NRT"
-    from: BKK
-    to: NRT
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "BKK-KIX"
-    from: BKK
-    to: KIX
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "BKK-NGO"
-    from: BKK
-    to: NGO
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "BKK-FUK"
-    from: BKK
-    to: FUK
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "BKK-HND"
-    from: BKK
-    to: HND
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "DMK-NRT"
-    from: DMK
-    to: NRT
-    adults: 3
-    children: 0
-    infants: 0
-    currency: thb
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
-    providers:
-      vietjet: 2000
-      google_flights: 5000
-
-  - name: "SIN-NRT"
-    from: SIN
-    to: NRT
+  - name: "HDY-BKK (Hat Yai→Bangkok)"
+    from: HDY
+    to: BKK
     adults: 1
     children: 0
     infants: 0
-    currency: sgd
-    max_price_per_person: 160
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
+    currency: thb
+    date_range_start: "2026-12-21"
+    date_range_end: "2027-01-07"
+    providers:
+      google_flights: 1500
 
-  - name: "SIN-HND"
-    from: SIN
-    to: HND
+  - name: "HDY-DMK (Hat Yai→Bangkok)"
+    from: HDY
+    to: DMK
     adults: 1
     children: 0
     infants: 0
-    currency: sgd
-    max_price_per_person: 160
-    date_range_start: "2027-01-01"
-    date_range_end: "2027-01-08"
+    currency: thb
+    date_range_start: "2026-12-21"
+    date_range_end: "2027-01-07"
+    providers:
+      google_flights: 1500
+
+  - name: "SIN-BKK (SIN→Bangkok)"
+    from: SIN
+    to: BKK
+    adults: 1
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2026-12-21"
+    date_range_end: "2027-01-07"
+    providers:
+      google_flights: 2600
+
+  - name: "SIN-DMK (SIN→Bangkok)"
+    from: SIN
+    to: DMK
+    adults: 1
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2026-12-21"
+    date_range_end: "2027-01-07"
+    providers:
+      google_flights: 2600
