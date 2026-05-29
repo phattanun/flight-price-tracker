@@ -15,7 +15,7 @@ from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent
 PORT = int(os.environ.get("PORT", "10000"))
-INTERVAL = int(os.environ.get("CHECK_INTERVAL_MINUTES", "10"))
+INTERVAL = int(os.environ.get("CHECK_INTERVAL_MINUTES", "30"))
 CRON_SECRET = os.environ.get("CRON_SECRET", "").strip()
 _running = threading.Lock()
 _last_run: str = "never"

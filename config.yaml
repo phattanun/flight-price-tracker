@@ -1,5 +1,5 @@
 slack_webhook_url: ""  # use SLACK_WEBHOOK_URL env (GitHub secret or .env locally)
-check_interval_minutes: 10
+check_interval_minutes: 30
 
 rate_limit:
   min_delay_seconds: 3
@@ -56,7 +56,7 @@ routes:
     providers:
       google_flights: 2600
 
-  # Round trip: outbound Nov 15–Dec 15, return 10–16 days later (Google Flights total price)
+  # Round trip: outbound Nov 15–Dec 15, return 10–16 days later
   - name: "SIN-KIX round trip"
     from: SIN
     to: KIX
@@ -71,3 +71,4 @@ routes:
     date_range_end: "2026-12-15"
     providers:
       google_flights: 9000
+      vietjet: 500

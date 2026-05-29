@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from datetime import date, timedelta
 from typing import Any
 from urllib.parse import urlencode
 
@@ -38,53 +39,188 @@ class VietJetProvider(BaseProvider):
         self._rl = RateLimitConfig((config or {}).get("rate_limit"))
 
     def search_fares(self, route: RouteConfig) -> list[FareResult]:
-        if route.is_round_trip:
-            return []
         if _should_skip_vietjet():
             return []
-        anchor = format_dd_mm_yyyy(route.date_range_start)
-        merged: dict = {}
-        session = _open_vietjet_session(self._rl)
-        for ym in months_in_range(route.date_range_start, route.date_range_end):
-            params = [
-                ("tripType", "onewaytrip"),
-                ("from_where", route.origin),
-                ("to_where", route.destination),
-                ("start", anchor),
-                ("end", anchor),
-                ("adultCount", str(route.adults)),
-                ("childCount", str(route.children)),
-                ("infantCount", str(route.infants)),
-                ("promoCode", route.promo_code),
-                ("currency", route.currency),
-                ("year_months[]", ym),
-                ("findLowestFare", "1"),
-            ]
-            payload = _fetch_calendar(session, API_BASE, cfg=self._rl, params=params)
-            if isinstance(payload, dict):
-                merged.update(payload)
+        if route.is_round_trip:
+            return self._search_round_trip(route)
+        return self._search_one_way(route)
 
+    def _search_one_way(self, route: RouteConfig) -> list[FareResult]:
+        merged = self._load_calendar(None, route, trip_type="onewaytrip")
         fares: list[FareResult] = []
         for month_data in merged.values():
             if not isinstance(month_data, dict):
                 continue
             for date_str, price in (month_data.get("data") or {}).items():
+                fd = parse_api_date(date_str)
+                if not (route.date_range_start <= fd <= route.date_range_end):
+                    continue
                 fares.append(
                     FareResult(
                         airline="VietJet",
                         origin=route.origin,
                         destination=route.destination,
-                        flight_date=parse_api_date(date_str),
+                        flight_date=fd,
                         price=float(price),
                         currency=route.currency.upper(),
                         provider=self.name,
-                        booking_url=(
-                            f"https://th.vietjetair.com/select-flight-cheap?"
-                            f"from_where={route.origin}&to_where={route.destination}"
-                        ),
+                        booking_url=_booking_url(route, fd, trip_type="onewaytrip"),
                     )
                 )
         return fares
+
+    def _search_round_trip(self, route: RouteConfig) -> list[FareResult]:
+        if route.trip_duration_min is None or route.trip_duration_max is None:
+            return []
+        session = _open_vietjet_session(self._rl)
+        outbound_prices = self._calendar_prices(
+            session,
+            route,
+            origin=route.origin,
+            destination=route.destination,
+            range_start=route.date_range_start,
+            range_end=route.date_range_end,
+        )
+        return_start = route.date_range_start + timedelta(days=route.trip_duration_min)
+        return_end = route.date_range_end + timedelta(days=route.trip_duration_max)
+        return_prices = self._calendar_prices(
+            session,
+            route,
+            origin=route.destination,
+            destination=route.origin,
+            range_start=return_start,
+            range_end=return_end,
+        )
+
+        fares: list[FareResult] = []
+        outbound = route.date_range_start
+        while outbound <= route.date_range_end:
+            for trip_days in range(route.trip_duration_min, route.trip_duration_max + 1):
+                return_date = outbound + timedelta(days=trip_days)
+                out_price = outbound_prices.get(outbound)
+                ret_price = return_prices.get(return_date)
+                if out_price is None or ret_price is None:
+                    continue
+                fares.append(
+                    FareResult(
+                        airline="VietJet",
+                        origin=route.origin,
+                        destination=route.destination,
+                        flight_date=outbound,
+                        price=out_price + ret_price,
+                        currency=route.currency.upper(),
+                        provider=self.name,
+                        booking_url=_booking_url(
+                            route,
+                            outbound,
+                            trip_type="roundtrip",
+                            return_date=return_date,
+                        ),
+                        return_date=return_date,
+                        trip_days=trip_days,
+                    )
+                )
+            outbound += timedelta(days=1)
+        return fares
+
+    def _calendar_prices(
+        self,
+        session: Any,
+        route: RouteConfig,
+        *,
+        origin: str,
+        destination: str,
+        range_start: date,
+        range_end: date,
+    ) -> dict[date, float]:
+        merged = self._load_calendar(
+            session,
+            route,
+            trip_type="onewaytrip",
+            origin=origin,
+            destination=destination,
+            range_start=range_start,
+            range_end=range_end,
+        )
+        prices: dict[date, float] = {}
+        for month_data in merged.values():
+            if not isinstance(month_data, dict):
+                continue
+            for date_str, price in (month_data.get("data") or {}).items():
+                fd = parse_api_date(date_str)
+                if range_start <= fd <= range_end:
+                    prices[fd] = float(price)
+        return prices
+
+    def _load_calendar(
+        self,
+        session: Any | None,
+        route: RouteConfig,
+        *,
+        trip_type: str,
+        origin: str | None = None,
+        destination: str | None = None,
+        range_start: date | None = None,
+        range_end: date | None = None,
+    ) -> dict:
+        leg_origin = origin or route.origin
+        leg_destination = destination or route.destination
+        start = range_start or route.date_range_start
+        end = range_end or route.date_range_end
+        anchor = format_dd_mm_yyyy(start)
+        own_session = session is None
+        if own_session:
+            session = _open_vietjet_session(self._rl)
+        merged: dict = {}
+        try:
+            for ym in months_in_range(start, end):
+                params = [
+                    ("tripType", trip_type),
+                    ("from_where", leg_origin),
+                    ("to_where", leg_destination),
+                    ("start", anchor),
+                    ("end", anchor),
+                    ("adultCount", str(route.adults)),
+                    ("childCount", str(route.children)),
+                    ("infantCount", str(route.infants)),
+                    ("promoCode", route.promo_code),
+                    ("currency", route.currency),
+                    ("year_months[]", ym),
+                    ("findLowestFare", "1"),
+                ]
+                payload = _request_calendar(session, API_BASE, cfg=self._rl, params=params)
+                if isinstance(payload, dict):
+                    merged.update(payload)
+        finally:
+            if own_session and hasattr(session, "close"):
+                session.close()
+        return merged
+
+
+def _booking_url(
+    route: RouteConfig,
+    outbound: date,
+    *,
+    trip_type: str,
+    return_date: date | None = None,
+) -> str:
+    qs = [
+        ("tripType", trip_type),
+        ("currency", route.currency),
+        ("from_where", route.origin),
+        ("to_where", route.destination),
+        ("start", format_dd_mm_yyyy(outbound)),
+        ("end", format_dd_mm_yyyy(outbound)),
+        ("adultCount", str(route.adults)),
+        ("childCount", str(route.children)),
+        ("infantCount", str(route.infants)),
+        ("promoCode", route.promo_code),
+        ("findLowestFare", "1"),
+    ]
+    if return_date is not None:
+        ret = format_dd_mm_yyyy(return_date)
+        qs.extend([("returnStart", ret), ("returnEnd", ret)])
+    return f"https://th.vietjetair.com/select-flight-cheap?{urlencode(qs)}"
 
 
 def _open_vietjet_session(cfg: RateLimitConfig) -> Any:
@@ -108,7 +244,7 @@ def _open_vietjet_session(cfg: RateLimitConfig) -> Any:
         return session
 
 
-def _fetch_calendar(
+def _request_calendar(
     session: Any, url: str, *, cfg: RateLimitConfig, params: list[tuple[str, str]]
 ) -> dict:
     random_delay(cfg)
@@ -117,14 +253,14 @@ def _fetch_calendar(
         key = os.environ.get("SCRAPERAPI_KEY", "").strip()
         if key:
             print("  [vietjet] HTTP 403 — retrying via ScraperAPI (residential)...")
-            return _fetch_calendar_scraperapi(url, params, key)
+            return _request_calendar_scraperapi(url, params, key)
         _raise_blocked()
     resp.raise_for_status()
     data = resp.json()
     return data if isinstance(data, dict) else {}
 
 
-def _fetch_calendar_scraperapi(
+def _request_calendar_scraperapi(
     url: str, params: list[tuple[str, str]], api_key: str
 ) -> dict:
     """ScraperAPI free tier: https://www.scraperapi.com/ (1000 req/mo)."""
