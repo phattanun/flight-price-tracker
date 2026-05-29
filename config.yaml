@@ -70,4 +70,4 @@ routes:
     date_range_start: "2026-11-15"
     date_range_end: "2026-12-15"
     providers:
-      google_flights: 15000
+      google_flights: 9000
