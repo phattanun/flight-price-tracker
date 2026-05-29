@@ -20,6 +20,19 @@ def _simple_date_to_date(d: tuple[int, int, int] | list[int]) -> date_cls:
     return date_cls(d[0], d[1], d[2])
 
 
+def _bundled_round_trip_price(results: object) -> float | None:
+    """Google's round-trip total in the requested currency (not per-leg fares)."""
+    meta = getattr(results, "metadata", None)
+    shopping = getattr(meta, "shopping", None) if meta else None
+    cheapest = getattr(shopping, "cheapest_price", None) if shopping else None
+    return float(cheapest) if cheapest else None
+
+
+def _min_sane_round_trip_price(currency: str) -> float:
+    """Reject per-leg or wrong-currency scraps (e.g. ~516 labeled THB)."""
+    return {"THB": 4000, "SGD": 150, "USD": 100}.get(currency.upper(), 0)
+
+
 def _flight_to_fare(
     flight: object,
     *,
@@ -128,25 +141,34 @@ def fetch_google_flights_round_trip(
             )
             try:
                 results = get_flights(q, shopping=SHOPPING_CHEAPEST)
-                best: FareResult | None = None
-                for flight in results:
-                    if not flight.flights or len(flight.flights) < 2:
-                        continue
-                    ret_dep = flight.flights[1].departure
-                    actual_return = _simple_date_to_date(ret_dep.date)
-                    candidate = _flight_to_fare(
-                        flight,
-                        route=route,
-                        currency=currency,
-                        provider_name=provider_name,
-                        booking_url=q.url(),
-                        trip_days=trip_days,
-                        return_date=actual_return,
-                    )
-                    if best is None or candidate.price < best.price:
-                        best = candidate
-                if best is not None:
-                    fares.append(best)
+                price = _bundled_round_trip_price(results)
+                if price is None:
+                    leg_prices = [
+                        float(f.price) for f in results if f.flights and len(f.flights) >= 2
+                    ]
+                    price = min(leg_prices) if leg_prices else None
+                if price is None or price < _min_sane_round_trip_price(currency):
+                    continue
+
+                # Pick an itinerary row for airline name; price is always the bundled total.
+                sample = next(
+                    (f for f in results if f.flights and len(f.flights) >= 2),
+                    None,
+                )
+                if sample is None:
+                    continue
+                fare = _flight_to_fare(
+                    sample,
+                    route=route,
+                    currency=currency,
+                    provider_name=provider_name,
+                    booking_url=q.url(),
+                    trip_days=trip_days,
+                    return_date=return_date,
+                )
+                fare.flight_date = outbound
+                fare.price = price
+                fares.append(fare)
             except Exception as exc:
                 print(
                     f"  [google_flights] RT {route.origin}<->{route.destination} "
