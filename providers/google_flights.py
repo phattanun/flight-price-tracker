@@ -8,10 +8,12 @@ from datetime import timedelta
 from providers import BaseProvider, FareResult, RouteConfig, register_provider
 
 try:
-    from fast_flights import FlightQuery, Passengers, create_query, get_flights
+    from fast_flights import FlightQuery, Passengers, ShoppingOptions, create_query, get_flights
     HAS_FF = True
+    SHOPPING_CHEAPEST = ShoppingOptions(ranking_mode="cheapest", result_sort="price")
 except ImportError:
     HAS_FF = False
+    SHOPPING_CHEAPEST = None
 
 
 def fetch_google_flights(
@@ -37,7 +39,7 @@ def fetch_google_flights(
             currency=currency,
         )
         try:
-            results = get_flights(q)
+            results = get_flights(q, shopping=SHOPPING_CHEAPEST)
             for flight in results:
                 if not flight.flights:
                     continue
