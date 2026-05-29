@@ -22,6 +22,8 @@ class FareResult:
     provider: str
     flight_number: str | None = None
     booking_url: str | None = None
+    return_date: date | None = None
+    trip_days: int | None = None
 
 
 @dataclass
@@ -37,8 +39,15 @@ class RouteConfig:
     date_range_start: date
     date_range_end: date
     promo_code: str = ""
+    trip_type: str = "one_way"
+    trip_duration_min: int | None = None
+    trip_duration_max: int | None = None
     provider_limits: dict[str, float] | None = None
     extra: dict[str, Any] | None = None
+
+    @property
+    def is_round_trip(self) -> bool:
+        return self.trip_type == "round_trip"
 
     def providers_to_query(self) -> dict[str, float]:
         if self.provider_limits:
@@ -56,6 +65,25 @@ class RouteConfig:
             raise ValueError(
                 f"route {raw.get('name')}: set max_price_per_person or providers with limits"
             )
+        trip_type = str(raw.get("trip_type", "one_way")).replace("-", "_").lower()
+        duration_min = raw.get("trip_duration_min")
+        duration_max = raw.get("trip_duration_max")
+        trip_duration_min = int(duration_min) if duration_min is not None else None
+        trip_duration_max = int(duration_max) if duration_max is not None else None
+        if trip_type == "round_trip":
+            if trip_duration_min is None or trip_duration_max is None:
+                raise ValueError(
+                    f"route {raw.get('name')}: round_trip requires trip_duration_min and trip_duration_max"
+                )
+            if trip_duration_min > trip_duration_max:
+                raise ValueError(
+                    f"route {raw.get('name')}: trip_duration_min cannot exceed trip_duration_max"
+                )
+        elif trip_duration_min is not None or trip_duration_max is not None:
+            raise ValueError(
+                f"route {raw.get('name')}: trip_duration_min/max only valid with trip_type: round_trip"
+            )
+
         return cls(
             name=raw.get("name") or f"{raw['from']} -> {raw['to']}",
             origin=raw["from"],
@@ -68,6 +96,9 @@ class RouteConfig:
             date_range_start=parse_iso_date(raw["date_range_start"]),
             date_range_end=parse_iso_date(raw["date_range_end"]),
             promo_code=str(raw.get("promo_code", "")),
+            trip_type=trip_type,
+            trip_duration_min=trip_duration_min,
+            trip_duration_max=trip_duration_max,
             provider_limits=provider_limits,
             extra={k: v for k, v in raw.items() if k not in _ROUTE_KEYS},
         )
@@ -101,6 +132,7 @@ def providers_for_check(route: RouteConfig) -> dict[str, float]:
 _ROUTE_KEYS = frozenset({
     "name", "provider", "providers", "from", "to", "adults", "children", "infants",
     "currency", "max_price_per_person", "date_range_start", "date_range_end", "promo_code",
+    "trip_type", "trip_duration_min", "trip_duration_max",
 })
 
 
@@ -165,6 +197,14 @@ class BaseProvider(ABC):
         max_price_per_person: float | None = None,
     ) -> list[FareResult]:
         limit = route.max_price_per_person if max_price_per_person is None else max_price_per_person
+        if route.is_round_trip:
+            return [
+                f for f in fares
+                if route.date_range_start <= f.flight_date <= route.date_range_end
+                and f.return_date is not None
+                and route.trip_duration_min <= (f.trip_days or 0) <= route.trip_duration_max
+                and f.price <= limit
+            ]
         return [
             f for f in fares
             if route.date_range_start <= f.flight_date <= route.date_range_end

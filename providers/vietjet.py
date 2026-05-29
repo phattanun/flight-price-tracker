@@ -38,6 +38,8 @@ class VietJetProvider(BaseProvider):
         self._rl = RateLimitConfig((config or {}).get("rate_limit"))
 
     def search_fares(self, route: RouteConfig) -> list[FareResult]:
+        if route.is_round_trip:
+            return []
         if _should_skip_vietjet():
             return []
         anchor = format_dd_mm_yyyy(route.date_range_start)

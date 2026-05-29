@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import sys
-from datetime import timedelta
+from datetime import date as date_cls, timedelta
 
 from providers import BaseProvider, FareResult, RouteConfig, register_provider
 
@@ -16,13 +16,45 @@ except ImportError:
     SHOPPING_CHEAPEST = None
 
 
+def _simple_date_to_date(d: tuple[int, int, int] | list[int]) -> date_cls:
+    return date_cls(d[0], d[1], d[2])
+
+
+def _flight_to_fare(
+    flight: object,
+    *,
+    route: RouteConfig,
+    currency: str,
+    provider_name: str,
+    booking_url: str,
+    trip_days: int | None = None,
+    return_date: date_cls | None = None,
+) -> FareResult:
+    dep = flight.flights[0].departure  # type: ignore[attr-defined]
+    fd = _simple_date_to_date(dep.date)
+    airline = ", ".join(flight.airlines) if flight.airlines else "Multiple"  # type: ignore[attr-defined]
+    return FareResult(
+        airline=airline,
+        origin=route.origin,
+        destination=route.destination,
+        flight_date=fd,
+        price=float(flight.price),  # type: ignore[attr-defined]
+        currency=currency or "THB",
+        provider=provider_name,
+        flight_number=flight.flights[0].flight_number or None,  # type: ignore[attr-defined]
+        booking_url=booking_url,
+        return_date=return_date,
+        trip_days=trip_days,
+    )
+
+
 def fetch_google_flights(
     route: RouteConfig,
     *,
     airline_filter: str | None = None,
     provider_name: str = "google_flights",
 ) -> list[FareResult]:
-    """Query Google Flights; optionally keep only fares matching airline_filter (substring)."""
+    """Query Google Flights one-way; optionally keep only fares matching airline_filter (substring)."""
     if not HAS_FF:
         raise ImportError("Install fast-flights: pip install faster-flights")
 
@@ -46,16 +78,8 @@ def fetch_google_flights(
                 airline = ", ".join(flight.airlines) if flight.airlines else "Multiple"
                 if needle and needle not in airline.lower():
                     continue
-                dep = flight.flights[0].departure
-                fd = dep.date  # (y, m, d)
-                from datetime import date as date_cls
-                flight_date = date_cls(fd[0], fd[1], fd[2])
-                fares.append(FareResult(
-                    airline=airline, origin=route.origin, destination=route.destination,
-                    flight_date=flight_date, price=float(flight.price), currency=currency or "THB",
-                    provider=provider_name,
-                    flight_number=flight.flights[0].flight_number or None,
-                    booking_url=q.url(),
+                fares.append(_flight_to_fare(
+                    flight, route=route, currency=currency, provider_name=provider_name, booking_url=q.url()
                 ))
         except Exception as exc:
             print(
@@ -66,9 +90,78 @@ def fetch_google_flights(
     return fares
 
 
+def fetch_google_flights_round_trip(
+    route: RouteConfig,
+    *,
+    provider_name: str = "google_flights",
+) -> list[FareResult]:
+    """Search round-trip fares for each outbound date and trip length in range."""
+    if not HAS_FF:
+        raise ImportError("Install fast-flights: pip install faster-flights")
+    if not route.is_round_trip or route.trip_duration_min is None or route.trip_duration_max is None:
+        raise ValueError("fetch_google_flights_round_trip requires a round_trip RouteConfig")
+
+    fares: list[FareResult] = []
+    currency = route.currency.upper() if route.currency else ""
+    pax = Passengers(adults=route.adults, children=route.children, infants_in_seat=route.infants)
+    outbound = route.date_range_start
+
+    while outbound <= route.date_range_end:
+        for trip_days in range(route.trip_duration_min, route.trip_duration_max + 1):
+            return_date = outbound + timedelta(days=trip_days)
+            fq_out = FlightQuery(
+                date=outbound.strftime("%Y-%m-%d"),
+                from_airport=route.origin,
+                to_airport=route.destination,
+            )
+            fq_ret = FlightQuery(
+                date=return_date.strftime("%Y-%m-%d"),
+                from_airport=route.destination,
+                to_airport=route.origin,
+            )
+            q = create_query(
+                flights=[fq_out, fq_ret],
+                trip="round-trip",
+                seat="economy",
+                passengers=pax,
+                currency=currency,
+            )
+            try:
+                results = get_flights(q, shopping=SHOPPING_CHEAPEST)
+                best: FareResult | None = None
+                for flight in results:
+                    if not flight.flights or len(flight.flights) < 2:
+                        continue
+                    ret_dep = flight.flights[1].departure
+                    actual_return = _simple_date_to_date(ret_dep.date)
+                    candidate = _flight_to_fare(
+                        flight,
+                        route=route,
+                        currency=currency,
+                        provider_name=provider_name,
+                        booking_url=q.url(),
+                        trip_days=trip_days,
+                        return_date=actual_return,
+                    )
+                    if best is None or candidate.price < best.price:
+                        best = candidate
+                if best is not None:
+                    fares.append(best)
+            except Exception as exc:
+                print(
+                    f"  [google_flights] RT {route.origin}<->{route.destination} "
+                    f"{outbound} +{trip_days}d: {exc}",
+                    file=sys.stderr,
+                )
+        outbound += timedelta(days=1)
+    return fares
+
+
 @register_provider
 class GoogleFlightsProvider(BaseProvider):
     name = "google_flights"
 
     def search_fares(self, route: RouteConfig) -> list[FareResult]:
+        if route.is_round_trip:
+            return fetch_google_flights_round_trip(route, provider_name=self.name)
         return fetch_google_flights(route, provider_name=self.name)

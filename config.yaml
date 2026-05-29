@@ -55,3 +55,19 @@ routes:
     date_range_end: "2027-01-07"
     providers:
       google_flights: 2600
+
+  # Round trip: outbound Nov 15–Dec 15, return 10–16 days later (Google Flights total price)
+  - name: "SIN-KIX round trip"
+    from: SIN
+    to: KIX
+    trip_type: round_trip
+    trip_duration_min: 10
+    trip_duration_max: 16
+    adults: 1
+    children: 0
+    infants: 0
+    currency: thb
+    date_range_start: "2026-11-15"
+    date_range_end: "2026-12-15"
+    providers:
+      google_flights: 15000

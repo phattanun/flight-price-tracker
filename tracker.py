@@ -67,20 +67,33 @@ def format_slack_message(route: RouteConfig, matches: list[FareResult]) -> str:
         guest_parts.append(f"{route.children} child{'ren' if route.children != 1 else ''}")
     if route.infants:
         guest_parts.append(f"{route.infants} infant{'s' if route.infants != 1 else ''}")
-    lines = [
-        f"*Flight Deal: {route.name}*",
-        f"{route.origin} -> {route.destination} ({', '.join(guest_parts)})",
-    ]
+    if route.is_round_trip:
+        lines = [
+            f"*Flight Deal: {route.name}*",
+            f"{route.origin} <-> {route.destination} round trip ({', '.join(guest_parts)})",
+            f"Outbound {route.date_range_start} to {route.date_range_end}, "
+            f"stay {route.trip_duration_min}-{route.trip_duration_max} days",
+        ]
+    else:
+        lines = [
+            f"*Flight Deal: {route.name}*",
+            f"{route.origin} -> {route.destination} ({', '.join(guest_parts)})",
+        ]
     providers = route.providers_to_query()
+    price_label = "total" if route.is_round_trip else "person"
     if len(providers) == 1:
         pname, limit = next(iter(providers.items()))
-        lines.append(f"Threshold: <= {limit:,.0f} {route.currency.upper()}/person via {pname}")
+        lines.append(f"Threshold: <= {limit:,.0f} {route.currency.upper()} {price_label} via {pname}")
     else:
         thresh = ", ".join(f"{p} <= {lim:,.0f}" for p, lim in sorted(providers.items()))
-        lines.append(f"Thresholds ({route.currency.upper()}/person): {thresh}")
-    for f in sorted(matches, key=lambda x: (x.provider, x.flight_date)):
+        lines.append(f"Thresholds ({route.currency.upper()} {price_label}): {thresh}")
+    for f in sorted(matches, key=lambda x: (x.provider, x.flight_date, x.trip_days or 0)):
         extra = f" ({f.airline})" if f.airline else ""
-        lines.append(f"- {f.flight_date.isoformat()}: {f.price:,.0f} {f.currency}{extra} [{f.provider}]")
+        if f.return_date and f.trip_days:
+            date_part = f"{f.flight_date.isoformat()} -> {f.return_date.isoformat()} ({f.trip_days}d)"
+        else:
+            date_part = f.flight_date.isoformat()
+        lines.append(f"- {date_part}: {f.price:,.0f} {f.currency}{extra} [{f.provider}]")
     book = next((f.booking_url for f in matches if f.booking_url), None)
     if book:
         lines.append(f"<{book}|Book now>")
@@ -98,7 +111,14 @@ def check_route(
     if not providers:
         print(f"Checking {route.name} — no providers enabled on this host.")
         return False, []
-    print(f"Checking {route.name} ({', '.join(providers)})...")
+    if route.is_round_trip:
+        print(
+            f"Checking {route.name} ({', '.join(providers)}) — "
+            f"outbound {route.date_range_start} to {route.date_range_end}, "
+            f"{route.trip_duration_min}-{route.trip_duration_max} day stay..."
+        )
+    else:
+        print(f"Checking {route.name} ({', '.join(providers)})...")
 
     all_matches: list[FareResult] = []
     errors: list[str] = []
