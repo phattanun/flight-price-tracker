@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from datetime import timedelta
 
 from providers import BaseProvider, FareResult, RouteConfig, register_provider
@@ -54,9 +55,12 @@ def fetch_google_flights(
                     flight_number=flight.flights[0].flight_number or None,
                     booking_url=q.url(),
                 ))
-        except Exception:
-            pass
-        d += timedelta(days=7)
+        except Exception as exc:
+            print(
+                f"  [google_flights] {route.origin}->{route.destination} {d}: {exc}",
+                file=sys.stderr,
+            )
+        d += timedelta(days=1)
     return fares
 
 

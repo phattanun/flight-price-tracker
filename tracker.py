@@ -115,6 +115,15 @@ def check_route(
             matches = provider.filter_deals(route, fares, max_price_per_person=max_price)
             if matches:
                 print(f"  [{provider_name}] {len(matches)} fare(s) <= {max_price:,.0f}")
+            elif fares:
+                cheapest = min(fares, key=lambda f: f.price)
+                print(
+                    f"  [{provider_name}] {len(fares)} fare(s); cheapest "
+                    f"{cheapest.price:,.0f} {cheapest.currency} on {cheapest.flight_date} "
+                    f"(limit {max_price:,.0f})"
+                )
+            else:
+                print(f"  [{provider_name}] no fares returned from API")
             all_matches.extend(matches)
         except Exception as exc:
             if is_provider_geo_blocked(exc):
