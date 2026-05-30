@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 import requests
 
 from providers import (
+    round_trip_stays_to_search,
     BaseProvider,
     FareResult,
     RouteConfig,
@@ -73,55 +74,59 @@ class VietJetProvider(BaseProvider):
         if route.trip_duration_min is None or route.trip_duration_max is None:
             return []
         session = _open_vietjet_session(self._rl)
-        outbound_prices = self._calendar_prices(
-            session,
-            route,
-            origin=route.origin,
-            destination=route.destination,
-            range_start=route.date_range_start,
-            range_end=route.date_range_end,
-        )
-        return_start = route.date_range_start + timedelta(days=route.trip_duration_min)
-        return_end = route.date_range_end + timedelta(days=route.trip_duration_max)
+        outbound_prices: dict[date, float] = {}
+        for window_start, window_end in route.outbound_windows():
+            outbound_prices.update(
+                self._calendar_prices(
+                    session,
+                    route,
+                    origin=route.origin,
+                    destination=route.destination,
+                    range_start=window_start,
+                    range_end=window_end,
+                )
+            )
         return_prices = self._calendar_prices(
             session,
             route,
             origin=route.destination,
             destination=route.origin,
-            range_start=return_start,
-            range_end=return_end,
+            range_start=route.return_range_start(),
+            range_end=route.return_range_end(),
         )
 
         fares: list[FareResult] = []
-        outbound = route.date_range_start
-        while outbound <= route.date_range_end:
-            for trip_days in range(route.trip_duration_min, route.trip_duration_max + 1):
-                return_date = outbound + timedelta(days=trip_days)
-                out_price = outbound_prices.get(outbound)
-                ret_price = return_prices.get(return_date)
-                if out_price is None or ret_price is None:
-                    continue
-                fares.append(
-                    FareResult(
-                        airline="VietJet",
-                        origin=route.origin,
-                        destination=route.destination,
-                        flight_date=outbound,
-                        price=out_price + ret_price,
-                        currency=route.currency.upper(),
-                        provider=self.name,
-                        booking_url=_booking_url(
-                            route,
-                            outbound,
-                            trip_type="roundtrip",
+        for window_start, window_end in route.outbound_windows():
+            outbound = window_start
+            while outbound <= window_end:
+                for trip_days in round_trip_stays_to_search(route, outbound):
+                    return_date = outbound + timedelta(days=trip_days)
+                    out_price = outbound_prices.get(outbound)
+                    ret_price = return_prices.get(return_date)
+                    if out_price is None or ret_price is None:
+                        continue
+                    fares.append(
+                        FareResult(
+                            airline="VietJet",
+                            origin=route.origin,
+                            destination=route.destination,
+                            flight_date=outbound,
+                            price=out_price + ret_price,
+                            currency=route.currency.upper(),
+                            provider=self.name,
+                            booking_url=_booking_url(
+                                route,
+                                outbound,
+                                trip_type="roundtrip",
+                                return_date=return_date,
+                            ),
                             return_date=return_date,
-                        ),
-                        return_date=return_date,
-                        trip_days=trip_days,
+                            trip_days=trip_days,
+                        )
                     )
-                )
-            outbound += timedelta(days=1)
+                outbound += timedelta(days=1)
         return fares
+
 
     def _calendar_prices(
         self,

@@ -17,7 +17,7 @@ permissions:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       - name: Log trigger
         run: echo "Triggered by ${{ github.event_name }} at $(date -u)"

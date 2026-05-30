@@ -6,7 +6,7 @@ import contextvars
 import sys
 from datetime import date as date_cls, timedelta
 
-from providers import BaseProvider, FareResult, RouteConfig, register_provider
+from providers import BaseProvider, FareResult, RouteConfig, register_provider, round_trip_stays_to_search
 
 try:
     from fast_flights import FlightQuery, Passengers, ShoppingOptions, create_query, get_flights
@@ -222,63 +222,64 @@ def fetch_google_flights_round_trip(
     currency = _resolve_currency(route)
     language = _shopping_language(route.origin, currency)
     pax = Passengers(adults=route.adults, children=route.children, infants_in_seat=route.infants)
-    outbound = route.date_range_start
-
-    while outbound <= route.date_range_end:
-        for trip_days in range(route.trip_duration_min, route.trip_duration_max + 1):
-            return_date = outbound + timedelta(days=trip_days)
-            fq_out = FlightQuery(
-                date=outbound.strftime("%Y-%m-%d"),
-                from_airport=route.origin,
-                to_airport=route.destination,
-            )
-            fq_ret = FlightQuery(
-                date=return_date.strftime("%Y-%m-%d"),
-                from_airport=route.destination,
-                to_airport=route.origin,
-            )
-            q = create_query(
-                flights=[fq_out, fq_ret],
-                trip="round-trip",
-                seat="economy",
-                passengers=pax,
-                currency=currency,
-                language=language,
-            )
-            try:
-                results = _get_flights_with_market(q, origin=route.origin)
-                best: FareResult | None = None
-                for flight in results:
-                    if not flight.flights:
-                        continue
-                    legs = flight.flights
-                    out_dep = _outbound_departure(legs, route.origin, outbound)
-                    ret_dep = _return_departure(legs, route.destination, route.origin, return_date)
-                    stay_days = (ret_dep - out_dep).days
-                    if stay_days < 0:
-                        stay_days = trip_days
-                    candidate = _flight_to_fare(
-                        flight,
-                        route=route,
-                        currency=currency,
-                        provider_name=provider_name,
-                        booking_url=q.url(),
-                        trip_days=stay_days,
-                        return_date=ret_dep,
-                    )
-                    candidate.flight_date = out_dep
-                    if best is None or candidate.price < best.price:
-                        best = candidate
-                if best is not None:
-                    fares.append(best)
-            except Exception as exc:
-                print(
-                    f"  [google_flights] RT {route.origin}<->{route.destination} "
-                    f"{outbound} +{trip_days}d: {exc}",
-                    file=sys.stderr,
+    for window_start, window_end in route.outbound_windows():
+        outbound = window_start
+        while outbound <= window_end:
+            for trip_days in round_trip_stays_to_search(route, outbound):
+                return_date = outbound + timedelta(days=trip_days)
+                fq_out = FlightQuery(
+                    date=outbound.strftime("%Y-%m-%d"),
+                    from_airport=route.origin,
+                    to_airport=route.destination,
                 )
-        outbound += timedelta(days=1)
+                fq_ret = FlightQuery(
+                    date=return_date.strftime("%Y-%m-%d"),
+                    from_airport=route.destination,
+                    to_airport=route.origin,
+                )
+                q = create_query(
+                    flights=[fq_out, fq_ret],
+                    trip="round-trip",
+                    seat="economy",
+                    passengers=pax,
+                    currency=currency,
+                    language=language,
+                )
+                try:
+                    results = _get_flights_with_market(q, origin=route.origin)
+                    best: FareResult | None = None
+                    for flight in results:
+                        if not flight.flights:
+                            continue
+                        legs = flight.flights
+                        out_dep = _outbound_departure(legs, route.origin, outbound)
+                        ret_dep = _return_departure(legs, route.destination, route.origin, return_date)
+                        stay_days = (ret_dep - out_dep).days
+                        if stay_days < 0:
+                            stay_days = trip_days
+                        candidate = _flight_to_fare(
+                            flight,
+                            route=route,
+                            currency=currency,
+                            provider_name=provider_name,
+                            booking_url=q.url(),
+                            trip_days=stay_days,
+                            return_date=ret_dep,
+                        )
+                        candidate.flight_date = out_dep
+                        if best is None or candidate.price < best.price:
+                            best = candidate
+                    if best is not None:
+                        fares.append(best)
+                except Exception as exc:
+                    print(
+                        f"  [google_flights] RT {route.origin}<->{route.destination} "
+                        f"{outbound} +{trip_days}d: {exc}",
+                        file=sys.stderr,
+                    )
+            outbound += timedelta(days=1)
     return fares
+
 
 
 @register_provider

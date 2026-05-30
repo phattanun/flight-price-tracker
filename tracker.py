@@ -24,6 +24,7 @@ from providers import (
     is_provider_geo_blocked,
     load_all_providers,
     providers_for_check,
+    best_round_trip_per_month,
 )
 from providers.anti_ratelimit import RateLimitConfig
 
@@ -68,11 +69,17 @@ def format_slack_message(route: RouteConfig, matches: list[FareResult]) -> str:
     if route.infants:
         guest_parts.append(f"{route.infants} infant{'s' if route.infants != 1 else ''}")
     if route.is_round_trip:
+        if route.date_windows and len(route.date_windows) > 1:
+            windows = ", ".join(f"{s}–{e}" for s, e in route.date_windows)
+            window_line = f"Outbound windows: {windows}"
+        else:
+            window_line = (
+                f"Outbound {route.date_range_start} to {route.date_range_end}"
+            )
         lines = [
             f"*Flight Deal: {route.name}*",
             f"{route.origin} <-> {route.destination} round trip ({', '.join(guest_parts)})",
-            f"Outbound {route.date_range_start} to {route.date_range_end}, "
-            f"stay {route.trip_duration_min}-{route.trip_duration_max} days",
+            f"{window_line}, stay {route.trip_duration_min}-{route.trip_duration_max} days",
         ]
     else:
         lines = [
@@ -112,10 +119,14 @@ def check_route(
         print(f"Checking {route.name} — no providers enabled on this host.")
         return False, []
     if route.is_round_trip:
+        if route.date_windows and len(route.date_windows) > 1:
+            windows = ", ".join(f"{s}–{e}" for s, e in route.date_windows)
+            window_desc = f"outbound windows {windows}"
+        else:
+            window_desc = f"outbound {route.date_range_start} to {route.date_range_end}"
         print(
             f"Checking {route.name} ({', '.join(providers)}) — "
-            f"outbound {route.date_range_start} to {route.date_range_end}, "
-            f"{route.trip_duration_min}-{route.trip_duration_max} day stay..."
+            f"{window_desc}, {route.trip_duration_min}-{route.trip_duration_max} day stay..."
         )
     else:
         print(f"Checking {route.name} ({', '.join(providers)})...")
@@ -169,6 +180,8 @@ def check_route(
         print("  No matching fares.")
         return False, errors
 
+    if route.is_round_trip and all_matches:
+        all_matches = best_round_trip_per_month(all_matches)
     print(f"  Found {len(all_matches)} matching fare(s) total.")
     message = format_slack_message(route, all_matches)
     if dry_run:

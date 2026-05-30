@@ -56,7 +56,7 @@ routes:
     providers:
       google_flights: 2600
 
-  # Round trip: outbound Nov 15–Dec 15, return 10–16 days later
+  # Round trip: Nov–Dec 2026 and Feb–May 2027 (10–16 day stay; return may be next month)
   - name: "SIN-KIX round trip"
     from: SIN
     to: KIX
@@ -67,8 +67,31 @@ routes:
     children: 0
     infants: 0
     currency: thb
-    date_range_start: "2026-11-15"
-    date_range_end: "2026-12-15"
+    date_ranges:
+      - start: "2026-11-15"
+        end: "2026-12-15"
+      - start: "2027-02-01"
+        end: "2027-05-31"
     providers:
       google_flights: 9000
       vietjet: 500
+
+  - name: "SIN-NRT round trip"
+    from: SIN
+    to: NRT
+    trip_type: round_trip
+    trip_duration_min: 10
+    trip_duration_max: 16
+    adults: 1
+    children: 0
+    infants: 0
+    currency: thb
+    date_ranges:
+      - start: "2026-11-15"
+        end: "2026-12-15"
+      - start: "2027-02-01"
+        end: "2027-05-31"
+    providers:
+      google_flights: 9000
+      vietjet: 500
+

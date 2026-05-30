@@ -5,7 +5,8 @@ from __future__ import annotations
 import os
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date, datetime
+import calendar
+from datetime import date, datetime, timedelta
 from typing import Any
 
 import requests
@@ -43,6 +44,7 @@ class RouteConfig:
     trip_duration_min: int | None = None
     trip_duration_max: int | None = None
     provider_limits: dict[str, float] | None = None
+    date_windows: list[tuple[date, date]] | None = None
     extra: dict[str, Any] | None = None
 
     @property
@@ -53,6 +55,25 @@ class RouteConfig:
         if self.provider_limits:
             return dict(self.provider_limits)
         return {name: self.max_price_per_person for name in PROVIDER_REGISTRY}
+
+    def outbound_windows(self) -> list[tuple[date, date]]:
+        if self.date_windows:
+            return self.date_windows
+        return [(self.date_range_start, self.date_range_end)]
+
+    def outbound_date_in_range(self, d: date) -> bool:
+        return any(start <= d <= end for start, end in self.outbound_windows())
+
+    def return_range_start(self) -> date:
+        stay = self.trip_duration_min or 0
+        return min(start + timedelta(days=stay) for start, _ in self.outbound_windows())
+
+    def return_range_end(self) -> date:
+        stay = self.trip_duration_max or 0
+        return max(end + timedelta(days=stay) for _, end in self.outbound_windows())
+
+    def return_date_in_range(self, d: date) -> bool:
+        return self.return_range_start() <= d <= self.return_range_end()
 
     @classmethod
     def from_dict(cls, raw: dict[str, Any]) -> RouteConfig:
@@ -84,6 +105,18 @@ class RouteConfig:
                 f"route {raw.get('name')}: trip_duration_min/max only valid with trip_type: round_trip"
             )
 
+        date_windows = None
+        if raw.get("date_ranges"):
+            date_windows = [
+                (parse_iso_date(w["start"]), parse_iso_date(w["end"]))
+                for w in raw["date_ranges"]
+            ]
+            date_range_start = min(s for s, _ in date_windows)
+            date_range_end = max(e for _, e in date_windows)
+        else:
+            date_range_start = parse_iso_date(raw["date_range_start"])
+            date_range_end = parse_iso_date(raw["date_range_end"])
+
         return cls(
             name=raw.get("name") or f"{raw['from']} -> {raw['to']}",
             origin=raw["from"],
@@ -93,13 +126,14 @@ class RouteConfig:
             infants=int(raw.get("infants", 0)),
             currency=str(raw.get("currency", "thb")).lower(),
             max_price_per_person=max_price,
-            date_range_start=parse_iso_date(raw["date_range_start"]),
-            date_range_end=parse_iso_date(raw["date_range_end"]),
+            date_range_start=date_range_start,
+            date_range_end=date_range_end,
             promo_code=str(raw.get("promo_code", "")),
             trip_type=trip_type,
             trip_duration_min=trip_duration_min,
             trip_duration_max=trip_duration_max,
             provider_limits=provider_limits,
+            date_windows=date_windows,
             extra={k: v for k, v in raw.items() if k not in _ROUTE_KEYS},
         )
 
@@ -132,7 +166,7 @@ def providers_for_check(route: RouteConfig) -> dict[str, float]:
 _ROUTE_KEYS = frozenset({
     "name", "provider", "providers", "from", "to", "adults", "children", "infants",
     "currency", "max_price_per_person", "date_range_start", "date_range_end", "promo_code",
-    "trip_type", "trip_duration_min", "trip_duration_max",
+    "trip_type", "trip_duration_min", "trip_duration_max", "date_ranges",
 })
 
 
@@ -179,6 +213,41 @@ def format_dd_mm_yyyy(d: date) -> str:
     return d.strftime("%d/%m/%Y")
 
 
+
+def round_trip_stays_to_search(route: RouteConfig, outbound: date) -> range:
+    """Stay lengths to query for one outbound date.
+
+    Returns may fall in the next calendar month (e.g. depart 28 Feb, return 10 Mar).
+    On large scans we still trim API calls mid-month, but always search the full
+    stay range near month-end and whenever the minimum stay crosses a month boundary.
+    """
+    lo = route.trip_duration_min
+    hi = route.trip_duration_max
+    if lo is None or hi is None:
+        return range(0)
+    total_days = sum((end - start).days + 1 for start, end in route.outbound_windows())
+    if total_days <= 45:
+        return range(lo, hi + 1)
+    last_day = calendar.monthrange(outbound.year, outbound.month)[1]
+    min_return = outbound + timedelta(days=lo)
+    crosses_month = min_return.month != outbound.month or min_return.year != outbound.year
+    near_month_end = outbound.day > last_day - hi
+    if crosses_month or near_month_end:
+        return range(lo, hi + 1)
+    if lo == hi:
+        return range(lo, lo + 1)
+    return range(lo, hi + 1, hi - lo)
+
+
+def best_round_trip_per_month(matches: list[FareResult]) -> list[FareResult]:
+    """Cheapest deal per provider and departure month (return may be the next month)."""
+    best: dict[tuple[str, int, int], FareResult] = {}
+    for fare in matches:
+        key = (fare.provider, fare.flight_date.year, fare.flight_date.month)
+        if key not in best or fare.price < best[key].price:
+            best[key] = fare
+    return sorted(best.values(), key=lambda f: (f.provider, f.flight_date, f.trip_days or 0))
+
 class BaseProvider(ABC):
     name: str = "base"
 
@@ -200,8 +269,9 @@ class BaseProvider(ABC):
         if route.is_round_trip:
             return [
                 f for f in fares
-                if route.date_range_start <= f.flight_date <= route.date_range_end
+                if route.outbound_date_in_range(f.flight_date)
                 and f.return_date is not None
+                and route.return_date_in_range(f.return_date)
                 and route.trip_duration_min <= (f.trip_days or 0) <= route.trip_duration_max
                 and f.price <= limit
             ]
